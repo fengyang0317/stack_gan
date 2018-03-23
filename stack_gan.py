@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import functools
 import numpy as np
+import time
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -262,20 +263,24 @@ def main(_):
       discriminator_optimizer=tf.train.AdamOptimizer(discriminator_lr, 0.5),
       summarize_gradients=True)
 
-  status_message = tf.string_join(
-    ['Starting train step: ',
-     tf.as_string(tf.train.get_or_create_global_step())],
-    name='status_message')
-  if FLAGS.max_steps == 0:
-    return
-  tfgan.gan_train(
-    train_ops,
-    hooks=[tf.train.StopAtStepHook(num_steps=FLAGS.max_steps),
-           tf.train.LoggingTensorHook([status_message], every_n_iter=100)],
-    logdir=FLAGS.job_dir,
-    get_hooks_fn=tfgan.get_joint_train_hooks(),
-    config=sess_config,
-    save_checkpoint_secs=FLAGS.save_checkpoint_secs)
+  merged = tf.summary.merge_all()
+  with tf.Session(config=sess_config) as sess:
+    sess.run(tf.global_variables_initializer())
+    saver = tf.train.Saver()
+    summary_writer = tf.summary.FileWriter('saving', sess.graph)
+    st = time.time()
+    for it in range(FLAGS.max_steps):
+      sess.run(train_ops.discriminator_train_op)
+      _, step_val, summary = sess.run([train_ops.generator_train_op, train_ops.global_step_inc_op, merged])
+      if it % 100 == 0 and it != 0:
+        summary_writer.add_summary(summary, it)
+        en = time.time()
+        print('iter = %d, %f' % (it, en - st))
+        st = en
+      if it % 10000 == 0 and it != 0:
+        saver.save(sess, 'saving', it)
+
+    summary_writer.close()
 
 
 if __name__ == '__main__':
