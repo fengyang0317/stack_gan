@@ -244,6 +244,8 @@ def main(_):
   global_step = tf.train.get_or_create_global_step()
   generator_lr = tf.train.exponential_decay(FLAGS.generator_lr, global_step, FLAGS.decay_steps, 0.5, staircase=True)
   discriminator_lr = tf.train.exponential_decay(FLAGS.discriminator_lr, global_step, FLAGS.decay_steps, 0.5, staircase=True)
+  tf.summary.scalar('learning_rate/generator', generator_lr)
+  tf.summary.scalar('learning_rate/discriminator', discriminator_lr)
   with tf.name_scope('train'):
     train_ops = tfgan.gan_train_ops(
       gan_model,
