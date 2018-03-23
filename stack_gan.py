@@ -50,16 +50,21 @@ FLAGS = tf.flags.FLAGS
 
 def generator_fn(inputs, weight_decay=1e-5, is_training=True):
   noize, sentence, _ = inputs
-  sentence = slim.fully_connected(sentence, FLAGS.ef_dim * 2, activation_fn=tf.nn.leaky_relu)
+  sentence = slim.fully_connected(sentence, FLAGS.ef_dim * 2, activation_fn=tf.nn.leaky_relu,
+                                  weights_initializer=tf.random_normal_initializer(stddev=0.02))
   mu, log_sigma = tf.split(sentence, 2, axis=1)
   eps = tf.truncated_normal(mu.shape)
   stddev = tf.exp(log_sigma)
   c = mu + stddev * eps
   net = tf.concat([noize, c], axis=1)
 
-  with slim.arg_scope([slim.batch_norm], decay=0.9, is_training=is_training):
-    with slim.arg_scope([slim.fully_connected, slim.conv2d], normalizer_fn=slim.batch_norm):
-      net10 = slim.fully_connected(net, 4 * 4 * FLAGS.gf_dim * 8, activation_fn=None, scope='net10')
+  with slim.arg_scope([slim.batch_norm], decay=0.9, epsilon=1e-5, is_training=is_training):
+    with slim.arg_scope([slim.conv2d], normalizer_fn=slim.batch_norm,
+                        weights_initializer=tf.truncated_normal_initializer(stddev=0.02),
+                        biases_initializer=None):
+      net10 = slim.fully_connected(net, 4 * 4 * FLAGS.gf_dim * 8, activation_fn=None, scope='net10',
+                                   weights_initializer=tf.random_normal_initializer(stddev=0.02),
+                                   normalizer_fn=slim.batch_norm)
       net10 = tf.reshape(net10, [-1, 4, 4, FLAGS.gf_dim * 8])
       net11 = slim.conv2d(net10, FLAGS.gf_dim * 2, 1, scope='net11_1')
       net11 = slim.conv2d(net11, FLAGS.gf_dim * 2, 3, scope='net11_2')
@@ -89,8 +94,10 @@ def discriminator_fn(inputs, generator_inputs, weight_decay=1e-5, is_training=Tr
     inputs = tf.concat([inputs, generator_inputs[2]], axis=0)
     tile_times = 2
   sentence = generator_inputs[1]
-  with slim.arg_scope([slim.batch_norm], decay=0.9, is_training=is_training):
-    with slim.arg_scope([slim.conv2d], activation_fn=tf.nn.leaky_relu, normalizer_fn=slim.batch_norm):
+  with slim.arg_scope([slim.batch_norm], decay=0.9, epsilon=1e-5, is_training=is_training):
+    with slim.arg_scope([slim.conv2d], activation_fn=tf.nn.leaky_relu, normalizer_fn=slim.batch_norm,
+                        weights_initializer=tf.truncated_normal_initializer(stddev=0.02),
+                        biases_initializer=None):
       net10 = slim.conv2d(inputs, FLAGS.df_dim, 4, stride=2, normalizer_fn=None, scope='net10_1')
       net10 = slim.conv2d(net10, FLAGS.df_dim * 2, 4, stride=2, scope='net10_2')
       net10 = slim.conv2d(net10, FLAGS.df_dim * 4, 4, stride=2, activation_fn=None, scope='net10_3')
@@ -100,7 +107,8 @@ def discriminator_fn(inputs, generator_inputs, weight_decay=1e-5, is_training=Tr
       net11 = slim.conv2d(net11, FLAGS.df_dim * 8, 3, scope='net11_3')
       net1 = tf.nn.leaky_relu(net10 + net11)
 
-      context = slim.fully_connected(sentence, FLAGS.ef_dim, activation_fn=tf.nn.leaky_relu)
+      context = slim.fully_connected(sentence, FLAGS.ef_dim, activation_fn=tf.nn.leaky_relu,
+                                     weights_initializer=tf.random_normal_initializer(stddev=0.02))
       context = tf.expand_dims(tf.expand_dims(context, 1), 1)
       context = tf.tile(context, [tile_times, 4, 4, 1])
       net = tf.concat([net1, context], axis=3)
