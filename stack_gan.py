@@ -271,14 +271,15 @@ def main(_):
     st = time.time()
     for it in range(FLAGS.max_steps):
       sess.run(train_ops.discriminator_train_op)
-      _, step_val, summary = sess.run([train_ops.generator_train_op, train_ops.global_step_inc_op, merged])
+      _, step_val = sess.run([train_ops.generator_train_op, train_ops.global_step_inc_op])
       if it % 100 == 0 and it != 0:
-        summary_writer.add_summary(summary, it)
+        summary = sess.run(merged)
+        summary_writer.add_summary(summary, step_val)
         en = time.time()
         print('iter = %d, %f' % (it, en - st))
         st = en
       if it % 10000 == 0 and it != 0:
-        saver.save(sess, 'saving', it)
+        saver.save(sess, 'saving', step_val)
 
     summary_writer.close()
 
