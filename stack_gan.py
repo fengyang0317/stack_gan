@@ -279,7 +279,7 @@ def main(_):
         print('iter = %d, %f' % (it, en - st))
         st = en
       if it % 10000 == 0 and it != 0:
-        saver.save(sess, 'saving', step_val)
+        saver.save(sess, 'saving/model.ckpt', step_val)
 
     summary_writer.close()
 
