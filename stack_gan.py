@@ -88,36 +88,39 @@ def generator_fn(inputs, weight_decay=1e-5, is_training=True):
 
 # real image consists of correct and wrong.
 def discriminator_fn(inputs, generator_inputs, weight_decay=1e-5, is_training=True):
-  if type(inputs) == list:
-    inputs = inputs[0]
-    tile_times = 1
-  else:
-    inputs = tf.concat([inputs, generator_inputs[2]], axis=0)
-    tile_times = 2
+  def run(inputs, sentence):
+    with slim.arg_scope([slim.batch_norm], decay=0.9, epsilon=1e-5, is_training=is_training):
+      with slim.arg_scope([slim.conv2d], activation_fn=tf.nn.leaky_relu, normalizer_fn=slim.batch_norm,
+                          weights_initializer=tf.truncated_normal_initializer(stddev=0.02),
+                          biases_initializer=None):
+        net10 = slim.conv2d(inputs, FLAGS.df_dim, 4, stride=2, normalizer_fn=None, scope='net10_1')
+        net10 = slim.conv2d(net10, FLAGS.df_dim * 2, 4, stride=2, scope='net10_2')
+        net10 = slim.conv2d(net10, FLAGS.df_dim * 4, 4, stride=2, activation_fn=None, scope='net10_3')
+        net10 = slim.conv2d(net10, FLAGS.df_dim * 8, 4, stride=2, activation_fn=None, scope='net10_4')
+        net11 = slim.conv2d(net10, FLAGS.df_dim * 2, 1, scope='net11_1')
+        net11 = slim.conv2d(net11, FLAGS.df_dim * 2, 3, scope='net11_2')
+        net11 = slim.conv2d(net11, FLAGS.df_dim * 8, 3, scope='net11_3')
+        net1 = tf.nn.leaky_relu(net10 + net11)
+
+        context = slim.fully_connected(sentence, FLAGS.ef_dim, activation_fn=tf.nn.leaky_relu,
+                                       weights_initializer=tf.random_normal_initializer(stddev=0.02),
+                                       scope='fc')
+        context = tf.expand_dims(tf.expand_dims(context, 1), 1)
+        context = tf.tile(context, [1, 4, 4, 1])
+        net = tf.concat([net1, context], axis=3)
+
+        net = slim.conv2d(net, FLAGS.df_dim * 8, 1, scope='net2')
+        net = slim.conv2d(net, 1, 4, padding='VALID', activation_fn=None, normalizer_fn=None, scope='output')
+        net = tf.squeeze(net, [1, 2])
+        return net
+
   sentence = generator_inputs[1]
-  with slim.arg_scope([slim.batch_norm], decay=0.9, epsilon=1e-5, is_training=is_training):
-    with slim.arg_scope([slim.conv2d], activation_fn=tf.nn.leaky_relu, normalizer_fn=slim.batch_norm,
-                        weights_initializer=tf.truncated_normal_initializer(stddev=0.02),
-                        biases_initializer=None):
-      net10 = slim.conv2d(inputs, FLAGS.df_dim, 4, stride=2, normalizer_fn=None, scope='net10_1')
-      net10 = slim.conv2d(net10, FLAGS.df_dim * 2, 4, stride=2, scope='net10_2')
-      net10 = slim.conv2d(net10, FLAGS.df_dim * 4, 4, stride=2, activation_fn=None, scope='net10_3')
-      net10 = slim.conv2d(net10, FLAGS.df_dim * 8, 4, stride=2, activation_fn=None, scope='net10_4')
-      net11 = slim.conv2d(net10, FLAGS.df_dim * 2, 1, scope='net11_1')
-      net11 = slim.conv2d(net11, FLAGS.df_dim * 2, 3, scope='net11_2')
-      net11 = slim.conv2d(net11, FLAGS.df_dim * 8, 3, scope='net11_3')
-      net1 = tf.nn.leaky_relu(net10 + net11)
-
-      context = slim.fully_connected(sentence, FLAGS.ef_dim, activation_fn=tf.nn.leaky_relu,
-                                     weights_initializer=tf.random_normal_initializer(stddev=0.02))
-      context = tf.expand_dims(tf.expand_dims(context, 1), 1)
-      context = tf.tile(context, [tile_times, 4, 4, 1])
-      net = tf.concat([net1, context], axis=3)
-
-      net = slim.conv2d(net, FLAGS.df_dim * 8, 1, scope='net2')
-      net = slim.conv2d(net, 1, 4, padding='VALID', activation_fn=None, normalizer_fn=None, scope='output')
-      net = tf.squeeze(net, [1, 2])
-      return net
+  if type(inputs) == list:
+    return run(inputs[0], sentence)
+  else:
+    correct = run(inputs, sentence)
+    wrong = run(generator_inputs[2], sentence)
+    return tf.concat([correct, wrong], axis=0)
 
 
 def generator_loss(gan_model, add_summaries=False):
@@ -241,6 +244,8 @@ def main(_):
   my_summary_image('1_input', gan_model.real_data)
   my_summary_image('2_fake', gan_model.generated_data[0])
   my_summary_image('3_wrong', gan_model.generator_inputs[2])
+  for variable in tf.global_variables():
+    tf.summary.histogram(variable.op.name, variable)
 
   with tf.name_scope('loss'):
     g_loss = tfgan.gan_loss(
